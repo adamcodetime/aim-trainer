@@ -14,6 +14,7 @@
 let rect;
 let score = 0;
 let scoreText;
+let timerText;
 let debugMode = true;
 let debugGraphics;
 
@@ -25,37 +26,74 @@ let inMenu = true;
 
 let activeTargets = [];
 let spawnTimer = null;
+let elapsedMs = 0;
 
 const MAX_ASSET_SIZE = 100;
 const CURSOR_HITBOX_SIZE = 20;
 const TARGET_HITBOX_SIZE = 300;
 const MISS_CLICK_PENALTY = 1;
 const EXPIRED_TARGET_PENALTY = 0.5;
+const DEFAULT_CURSOR_ASSET = "white.png";
+const DEFAULT_TARGET_ASSET = "red.png";
 
 // -------------------------
 // LEVEL DATA (Internal)
 // -------------------------
-const levels = {
-    "level1": {
-        "name": "Welcome",
-        "goal": 5,
-        "next": "level2",
-        "scoreDelta": 1,
-        "cooldown": 3,
-        "allowMultiple": null
-    },
-    "level2": {
-        "name": "Speed Up",
-        "goal": 10,
-        "next": null,
-        "scoreDelta": 1,
-        "cooldown": 1.5,
-        "allowMultiple": { "interval": 1000, "maxAmount": 3 }
+const gameData = {
+    "startLevel": "l1",
+    "levels": {
+        "l1": {
+            "name": "The start",
+            "goal": 3,
+            "next": "l2",
+            "scoreDelta": 1,
+            "cooldown": 10,
+            "missPenalty": 0.5,
+            "expiredPenalty": 0.5,
+            "cursorSize": 100,
+            "targetSize": 100,
+            "cursorHitboxSize": 20,
+            "targetHitboxSize": 400,
+            "movement": [],
+            "assets": {
+                "cursor": "assets/white.png",
+                "targets": "assets/red.png"
+            },
+            "allowMultiple": null
+        },
+        "l2": {
+            "name": "Get better :)",
+            "goal": 5,
+            "next": "null",
+            "scoreDelta": 1,
+            "cooldown": 3,
+            "missPenalty": 1,
+            "expiredPenalty": 0.5,
+            "cursorSize": 100,
+            "targetSize": 100,
+            "cursorHitboxSize": 20,
+            "targetHitboxSize": 400,
+            "movement": [],
+            "assets": {
+                "cursor": "assets/white.png",
+                "targets": "assets/red.png"
+            },
+            "allowMultiple": null
+        }
     }
 };
 
-let currentLevelKey = "level1";
-let currentLevel = levels[currentLevelKey];
+const levels = gameData.levels;
+
+function getStartLevelKey() {
+    if (gameData.startLevel && levels[gameData.startLevel]) {
+        return gameData.startLevel;
+    }
+    return Object.keys(levels)[0] || null;
+}
+
+let currentLevelKey = getStartLevelKey();
+let currentLevel = currentLevelKey ? levels[currentLevelKey] : null;
 
 // -------------------------
 // MOVEMENT SYSTEM
@@ -89,6 +127,137 @@ const Movement = {
     }
 };
 
+function toNumberOrFallback(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function sanitizeAssetValue(value) {
+    if (value == null) return "";
+    const normalized = String(value).trim();
+    if (!normalized) return "";
+
+    const lowered = normalized.toLowerCase();
+    if (lowered === "null" || lowered === "undefined" || lowered === "none") {
+        return "";
+    }
+
+    return normalized;
+}
+
+function normalizeAssetPath(assetValue, fallback) {
+    const value = sanitizeAssetValue(assetValue) || sanitizeAssetValue(fallback);
+    if (!value) return "";
+    if (value.includes("/") || value.startsWith("http://") || value.startsWith("https://")) {
+        return value;
+    }
+    return "assets/" + value;
+}
+
+function getAssetKey(assetPath) {
+    return "asset:" + assetPath;
+}
+
+function parseAssetEntry(entry, config) {
+    if (typeof entry !== "string") return;
+
+    const trimmed = sanitizeAssetValue(entry);
+    if (!trimmed) return;
+
+    if (!trimmed.includes("=")) {
+        config.targets.push(trimmed);
+        return;
+    }
+
+    const [rawRole, ...rest] = trimmed.split("=");
+    const role = rawRole.trim().toLowerCase();
+    const value = sanitizeAssetValue(rest.join("="));
+    if (!value) return;
+
+    if (role === "cursor") config.cursor = value;
+    if (role === "target") config.targets.push(value);
+}
+
+function resolveLevelAssets(level) {
+    const config = {
+        cursor: DEFAULT_CURSOR_ASSET,
+        targets: []
+    };
+
+    const rawAssets = level?.assets;
+
+    if (Array.isArray(rawAssets)) {
+        rawAssets.forEach(entry => parseAssetEntry(entry, config));
+    } else if (typeof rawAssets === "string") {
+        rawAssets.split(",").forEach(entry => parseAssetEntry(entry, config));
+    } else if (rawAssets && typeof rawAssets === "object") {
+        const cursorAsset = sanitizeAssetValue(rawAssets.cursor);
+        if (cursorAsset) config.cursor = cursorAsset;
+        if (Array.isArray(rawAssets.targets)) config.targets.push(...rawAssets.targets);
+        if (typeof rawAssets.targets === "string") config.targets.push(rawAssets.targets);
+        if (rawAssets.target) config.targets.push(rawAssets.target);
+    }
+
+    config.targets = [...new Set(config.targets.map(asset => sanitizeAssetValue(asset)).filter(Boolean))];
+    if (!config.targets.length) config.targets = [DEFAULT_TARGET_ASSET];
+
+    return config;
+}
+
+function collectAssetManifest(levelMap) {
+    const manifest = new Map();
+
+    Object.values(levelMap).forEach(level => {
+        const assets = resolveLevelAssets(level);
+        [assets.cursor, ...assets.targets].forEach(assetName => {
+            const path = normalizeAssetPath(assetName, "");
+            if (!path || manifest.has(path)) return;
+            manifest.set(path, getAssetKey(path));
+        });
+    });
+
+    return manifest;
+}
+
+function getCurrentCursorAssetKey() {
+    const assets = resolveLevelAssets(currentLevel);
+    return getAssetKey(normalizeAssetPath(assets.cursor, DEFAULT_CURSOR_ASSET));
+}
+
+function getRandomTargetAssetKey() {
+    const assets = resolveLevelAssets(currentLevel);
+    const assetName = Phaser.Utils.Array.GetRandom(assets.targets);
+    return getAssetKey(normalizeAssetPath(assetName, DEFAULT_TARGET_ASSET));
+}
+
+function getCursorAssetSize(level = currentLevel) {
+    return toNumberOrFallback(level?.cursorSize, MAX_ASSET_SIZE);
+}
+
+function getTargetAssetSize(level = currentLevel) {
+    return toNumberOrFallback(level?.targetSize, MAX_ASSET_SIZE);
+}
+
+function getCursorHitboxSize(level = currentLevel) {
+    return toNumberOrFallback(level?.cursorHitboxSize, CURSOR_HITBOX_SIZE);
+}
+
+function getTargetHitboxSize(level = currentLevel) {
+    return toNumberOrFallback(level?.targetHitboxSize, TARGET_HITBOX_SIZE);
+}
+
+function getMissClickPenalty(level = currentLevel) {
+    return toNumberOrFallback(level?.missPenalty, MISS_CLICK_PENALTY);
+}
+
+function getExpiredTargetPenalty(level = currentLevel) {
+    return toNumberOrFallback(level?.expiredPenalty, EXPIRED_TARGET_PENALTY);
+}
+
+function getScoreDelta(level = currentLevel) {
+    return toNumberOrFallback(level?.scoreDelta, 1);
+}
+
 function startGame() {
     const config = {
         type: Phaser.AUTO,
@@ -101,9 +270,9 @@ function startGame() {
 }
 
 function preload() {
-    // Using placeholders since external assets might not exist
-    this.load.image("whiteRect", "assets/white.png");
-    this.load.image("redRect", "assets/red.png");
+    collectAssetManifest(levels).forEach((key, path) => {
+        this.load.image(key, path);
+    });
 }
 
 function fitImageToMaxSize(image, maxSize = MAX_ASSET_SIZE) {
@@ -126,8 +295,21 @@ function formatScore(value) {
     return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+function formatElapsedTime(milliseconds) {
+    return (milliseconds / 1000).toFixed(1) + "s";
+}
+
 function updateScoreDisplay() {
     scoreText.setText("Score: " + formatScore(score));
+}
+
+function updateTimerDisplay() {
+    timerText.setText("Time: " + formatElapsedTime(elapsedMs));
+}
+
+function applyCursorAsset() {
+    rect.setTexture(getCurrentCursorAssetKey());
+    fitImageToMaxSize(rect, getCursorAssetSize());
 }
 
 function create() {
@@ -147,9 +329,14 @@ function create() {
         fontSize: "32px", color: "#ffffff"
     }).setDepth(9999).setVisible(false);
 
-    rect = fitImageToMaxSize(this.add.image(w / 2, h / 2, "whiteRect"))
+    timerText = this.add.text(w / 2, 20, "Time: 0.0s", {
+        fontSize: "32px", color: "#ffffff"
+    }).setOrigin(0.5, 0).setDepth(9999).setVisible(false);
+
+    rect = this.add.image(w / 2, h / 2, getCurrentCursorAssetKey())
         .setDepth(9999)
         .setVisible(false);
+    applyCursorAsset();
 
     // MENU SCREEN
     this.menuContainer = this.add.container(w / 2, h / 2);
@@ -161,6 +348,8 @@ function create() {
     playButton.on("pointerdown", () => {
         this.menuContainer.setVisible(false);
         inMenu = false;
+        elapsedMs = 0;
+        updateTimerDisplay();
         setupSpawning(this);
     });
     this.menuContainer.add([title, playButton]);
@@ -183,16 +372,16 @@ function create() {
             return;
         }
 
-        const cursorBounds = getCenteredHitbox(rect, CURSOR_HITBOX_SIZE);
+        const cursorBounds = getCenteredHitbox(rect, getCursorHitboxSize());
         let hitTarget = false;
         for (let i = activeTargets.length - 1; i >= 0; i--) {
             const t = activeTargets[i];
-            const targetBounds = getCenteredHitbox(t, TARGET_HITBOX_SIZE);
+            const targetBounds = getCenteredHitbox(t, getTargetHitboxSize());
             if (Phaser.Geom.Intersects.RectangleToRectangle(cursorBounds, targetBounds)) {
                 hitTarget = true;
                 t.destroy();
                 activeTargets.splice(i, 1);
-                score += currentLevel.scoreDelta || 1;
+                score += getScoreDelta();
                 updateScoreDisplay();
                 if (!currentLevel.allowMultiple && !gameOver) spawnTarget(this);
                 checkLevelProgress(this);
@@ -201,7 +390,7 @@ function create() {
         }
 
         if (!hitTarget) {
-            score -= MISS_CLICK_PENALTY;
+            score -= getMissClickPenalty();
             updateScoreDisplay();
         }
     });
@@ -212,6 +401,7 @@ function update() {
 
     rect.setVisible(true);
     scoreText.setVisible(true);
+    timerText.setVisible(true);
     goalText.setVisible(true);
     levelTextBG.setVisible(true);
 
@@ -224,6 +414,8 @@ function update() {
     if (rect.y > h) rect.y = 0;
 
     const dt = this.game.loop.delta;
+    elapsedMs += dt;
+    updateTimerDisplay();
     activeTargets.forEach(t => {
         if (t.movementModules) t.movementModules.forEach(fn => fn(dt));
     });
@@ -255,7 +447,8 @@ function spawnTarget(scene) {
     const x = Phaser.Math.Between(margin, scene.scale.width - margin);
     const y = Phaser.Math.Between(margin, scene.scale.height - margin);
 
-    const t = fitImageToMaxSize(scene.add.image(x, y, "redRect"));
+    const t = scene.add.image(x, y, getRandomTargetAssetKey());
+    fitImageToMaxSize(t, getTargetAssetSize());
     t.movementModules = [];
 
     if (currentLevel.movement) {
@@ -268,7 +461,7 @@ function spawnTarget(scene) {
         if (!gameOver && t.active) {
             t.destroy();
             Phaser.Utils.Array.Remove(activeTargets, t);
-            score -= EXPIRED_TARGET_PENALTY;
+            score -= getExpiredTargetPenalty();
             updateScoreDisplay();
             if (!currentLevel.allowMultiple && !gameOver) spawnTarget(scene);
         }
@@ -281,6 +474,7 @@ function checkLevelProgress(scene) {
             currentLevelKey = currentLevel.next;
             currentLevel = levels[currentLevelKey];
             score = 0;
+            applyCursorAsset();
             updateScoreDisplay();
             levelTextBG.setText(formatLevelText());
             goalText.setText("🏁 Goal: " + currentLevel.goal);
@@ -301,6 +495,9 @@ function showEndScreen(scene) {
     if (scene.input.mouse.locked) scene.input.mouse.releasePointerLock();
     scene.add.text(scene.scale.width / 2, scene.scale.height / 2, "🏆 TRAINING COMPLETE", {
         fontSize: "64px", color: "#ffffff", fontStyle: "bold"
+    }).setOrigin(0.5);
+    scene.add.text(scene.scale.width / 2, scene.scale.height / 2 + 70, "Final Time: " + formatElapsedTime(elapsedMs), {
+        fontSize: "32px", color: "#ffffff"
     }).setOrigin(0.5);
 }
 

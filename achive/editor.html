@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Aim Trainer Level Editor</title>
+    <style>
+        body {
+            margin: 0;
+            background: #0f172a;
+            color: #e2e8f0;
+            font-family: system-ui, sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        #sidebar {
+            width: 260px;
+            background: #1e293b;
+            border-right: 1px solid #334155;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 220px;
+            max-width: 50vw;
+            flex-shrink: 0;
+            resize: horizontal;
+            overflow: auto;
+        }
+
+        #levelList {
+            flex: 1;
+            overflow-y: auto;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 6px;
+        }
+
+        .levelItem {
+            padding: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 4px;
+            background: #0f172a;
+            border: 1px solid #334155;
+        }
+
+        .levelItem.active {
+            background: #38bdf8;
+            color: #0f172a;
+            border-color: #38bdf8;
+        }
+
+        button {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            background: #38bdf8;
+            color: #0f172a;
+            font-weight: 600;
+        }
+
+        button.danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        /* Main editor */
+        #main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 12px;
+            gap: 12px;
+            min-height: 0;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        .panel {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 12px;
+        }
+
+        #editorPanel {
+            flex: 1 1 55%;
+            min-height: 0;
+            min-width: 0;
+            overflow: auto;
+            resize: vertical;
+        }
+
+        #previewPanel {
+            flex: 1 1 35%;
+            min-height: 180px;
+            min-width: 0;
+            overflow: auto;
+            resize: vertical;
+        }
+
+        .row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .field {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 4px;
+        }
+
+        input, select {
+            padding: 6px;
+            border-radius: 6px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+
+        input:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        #preview {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 12px;
+            white-space: pre;
+            overflow: auto;
+            height: 100%;
+            font-family: monospace;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <button id="importBtn">Import levels.json</button>
+    <div id="levelList"></div>
+    <button id="addLevelBtn">+ Add Level</button>
+</div>
+
+<div id="main">
+    <div class="panel" id="editorPanel">
+        <h2 id="editorTitle">No level selected</h2>
+        <button id="deleteLevelBtn" class="danger" style="display:none;">Delete Level</button>
+
+        <div class="row">
+            <div class="field">
+                <label>Name</label>
+                <input id="nameInput" />
+            </div>
+            <div class="field">
+                <label>Next Level Key</label>
+                <input id="nextInput" />
+                <div class="hint">Use the level key, like <code>level2</code>, not the display name.</div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="field">
+                <label>Start Level Key</label>
+                <input id="startLevelInput" />
+                <div class="hint">This is the level the game loads first.</div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="field">
+                <label>Goal</label>
+                <input id="goalInput" type="number" />
+            </div>
+            <div class="field">
+                <label>Score Delta</label>
+                <input id="scoreInput" type="number" />
+            </div>
+            <div class="field">
+                <label>Cooldown</label>
+                <input id="cooldownInput" type="number" step="0.1" />
+            </div>
+        </div>
+
+        <h3>Assets</h3>
+        <div class="row">
+            <div class="field">
+                <label>Cursor Asset</label>
+                <input id="cursorAssetInput" placeholder="white.png" />
+            </div>
+            <div class="field">
+                <label>Target Assets</label>
+                <input id="targetAssetsInput" placeholder="red.png,blue.png" />
+            </div>
+        </div>
+
+        <h3>Allow Multiple</h3>
+        <div class="row">
+            <div class="field">
+                <label>
+                    <input id="allowMultipleEnabledInput" type="checkbox" />
+                    Enable Allow Multiple
+                </label>
+            </div>
+        </div>
+        <div class="row">
+            <div class="field">
+                <label>Max Amount</label>
+                <input id="maxAmountInput" type="number" />
+            </div>
+            <div class="field">
+                <label>Interval (ms)</label>
+                <input id="intervalInput" type="number" />
+            </div>
+        </div>
+
+        <h3>Gameplay</h3>
+        <div class="row">
+            <div class="field">
+                <label>Miss Penalty</label>
+                <input id="missPenaltyInput" type="number" step="0.1" />
+            </div>
+            <div class="field">
+                <label>Expired Penalty</label>
+                <input id="expiredPenaltyInput" type="number" step="0.1" />
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="field">
+                <label>Cursor Size</label>
+                <input id="cursorSizeInput" type="number" />
+            </div>
+            <div class="field">
+                <label>Target Size</label>
+                <input id="targetSizeInput" type="number" />
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="field">
+                <label>Cursor Hitbox</label>
+                <input id="cursorHitboxInput" type="number" />
+            </div>
+            <div class="field">
+                <label>Target Hitbox</label>
+                <input id="targetHitboxInput" type="number" />
+            </div>
+        </div>
+
+        <h3>Movement</h3>
+        <button id="addJitterBtn">+ Add Jitter</button>
+        <button id="addLinearBtn">+ Add Linear</button>
+
+        <div id="movementContainer"></div>
+    </div>
+
+    <div class="panel" id="previewPanel">
+        <h2>JSON Preview</h2>
+        <div id="preview"></div>
+    </div>
+
+    <button id="exportBtn">Export levels.json</button>
+</div>
+
+<script>
+/* PART 1 JS START */
+let allLevels = {};
+let currentKey = null;
+let startLevelKey = null;
+
+function sanitizeAssetValue(value) {
+    if (value == null) return "";
+    const normalized = String(value).trim();
+    if (!normalized) return "";
+
+    const lowered = normalized.toLowerCase();
+    if (lowered === "null" || lowered === "undefined" || lowered === "none") {
+        return "";
+    }
+
+    return normalized;
+}
+
+function setAllowMultipleEnabled(enabled) {
+    document.getElementById("allowMultipleEnabledInput").checked = enabled;
+    document.getElementById("maxAmountInput").disabled = !enabled;
+    document.getElementById("intervalInput").disabled = !enabled;
+}
+
+function refreshLevelList() {
+    const list = document.getElementById("levelList");
+    list.innerHTML = "";
+
+    Object.keys(allLevels).forEach(key => {
+        const div = document.createElement("div");
+        div.className = "levelItem" + (key === currentKey ? " active" : "");
+        div.textContent = key;
+        div.onclick = () => selectLevel(key);
+        list.appendChild(div);
+    });
+}
+
+function selectLevel(key) {
+    currentKey = key;
+    const lvl = allLevels[key];
+
+    document.getElementById("editorTitle").textContent = key;
+    document.getElementById("deleteLevelBtn").style.display = "inline-block";
+
+    document.getElementById("nameInput").value = lvl.name;
+    document.getElementById("nextInput").value = lvl.next ?? "";
+    document.getElementById("startLevelInput").value = startLevelKey ?? "";
+    document.getElementById("goalInput").value = lvl.goal;
+    document.getElementById("scoreInput").value = lvl.scoreDelta;
+    document.getElementById("cooldownInput").value = lvl.cooldown;
+
+    const assets = normalizeAssets(lvl.assets);
+    document.getElementById("cursorAssetInput").value = assets.cursor;
+    document.getElementById("targetAssetsInput").value = assets.targets.join(",");
+
+    if (lvl.allowMultiple) {
+        setAllowMultipleEnabled(true);
+        document.getElementById("maxAmountInput").value = lvl.allowMultiple.maxAmount;
+        document.getElementById("intervalInput").value = lvl.allowMultiple.interval;
+    } else {
+        setAllowMultipleEnabled(false);
+        document.getElementById("maxAmountInput").value = "";
+        document.getElementById("intervalInput").value = "";
+    }
+
+    document.getElementById("missPenaltyInput").value = lvl.missPenalty ?? 1;
+    document.getElementById("expiredPenaltyInput").value = lvl.expiredPenalty ?? 0.5;
+    document.getElementById("cursorSizeInput").value = lvl.cursorSize ?? 100;
+    document.getElementById("targetSizeInput").value = lvl.targetSize ?? 100;
+    document.getElementById("cursorHitboxInput").value = lvl.cursorHitboxSize ?? 20;
+    document.getElementById("targetHitboxInput").value = lvl.targetHitboxSize ?? 36;
+
+    renderMovement();
+    updatePreview();
+    refreshLevelList();
+}
+
+function normalizeAssets(rawAssets) {
+    const config = {
+        cursor: "white.png",
+        targets: []
+    };
+
+    if (Array.isArray(rawAssets)) {
+        rawAssets.forEach(entry => {
+            if (typeof entry !== "string") return;
+            const trimmed = sanitizeAssetValue(entry);
+            if (!trimmed) return;
+            if (!trimmed.includes("=")) {
+                config.targets.push(trimmed);
+                return;
+            }
+            const [rawRole, ...rest] = trimmed.split("=");
+            const role = rawRole.trim().toLowerCase();
+            const value = sanitizeAssetValue(rest.join("="));
+            if (!value) return;
+            if (role === "cursor") config.cursor = value;
+            if (role === "target") config.targets.push(value);
+        });
+    } else if (rawAssets && typeof rawAssets === "object") {
+        const cursorAsset = sanitizeAssetValue(rawAssets.cursor);
+        if (cursorAsset) config.cursor = cursorAsset;
+        if (rawAssets.target) config.targets.push(rawAssets.target);
+        if (Array.isArray(rawAssets.targets)) config.targets.push(...rawAssets.targets);
+        if (typeof rawAssets.targets === "string") config.targets.push(rawAssets.targets);
+    }
+
+    config.targets = [...new Set(config.targets.map(asset => sanitizeAssetValue(asset)).filter(Boolean))];
+    if (!config.targets.length) config.targets = ["red.png"];
+    return config;
+}
+
+function updatePreview() {
+    if (!currentKey) {
+        document.getElementById("editorTitle").textContent = "No level selected";
+        document.getElementById("deleteLevelBtn").style.display = "none";
+        document.getElementById("startLevelInput").value = startLevelKey ?? "";
+        document.getElementById("preview").textContent = "// No level selected";
+        return;
+    }
+    document.getElementById("preview").textContent =
+        JSON.stringify({
+            startLevel: startLevelKey,
+            levels: allLevels
+        }, null, 4);
+}
+
+function saveCurrentLevel() {
+    if (!currentKey) return;
+
+    const lvl = allLevels[currentKey];
+
+    lvl.name = document.getElementById("nameInput").value;
+    lvl.next = document.getElementById("nextInput").value || null;
+    startLevelKey = document.getElementById("startLevelInput").value.trim() || null;
+    lvl.goal = Number(document.getElementById("goalInput").value);
+    lvl.scoreDelta = Number(document.getElementById("scoreInput").value);
+    lvl.cooldown = Number(document.getElementById("cooldownInput").value);
+
+    const cursorAsset = sanitizeAssetValue(document.getElementById("cursorAssetInput").value) || "white.png";
+    const targetAssets = document.getElementById("targetAssetsInput").value
+        .split(",")
+        .map(asset => sanitizeAssetValue(asset))
+        .filter(Boolean);
+    lvl.assets = {
+        cursor: cursorAsset,
+        targets: targetAssets.length ? targetAssets : ["red.png"]
+    };
+
+    const allowMultipleEnabled = document.getElementById("allowMultipleEnabledInput").checked;
+    const maxA = document.getElementById("maxAmountInput").value;
+    const intv = document.getElementById("intervalInput").value;
+
+    if (allowMultipleEnabled && maxA && intv) {
+        lvl.allowMultiple = {
+            maxAmount: Number(maxA),
+            interval: Number(intv)
+        };
+    } else {
+        lvl.allowMultiple = null;
+    }
+
+    lvl.missPenalty = Number(document.getElementById("missPenaltyInput").value);
+    lvl.expiredPenalty = Number(document.getElementById("expiredPenaltyInput").value);
+    lvl.cursorSize = Number(document.getElementById("cursorSizeInput").value);
+    lvl.targetSize = Number(document.getElementById("targetSizeInput").value);
+    lvl.cursorHitboxSize = Number(document.getElementById("cursorHitboxInput").value);
+    lvl.targetHitboxSize = Number(document.getElementById("targetHitboxInput").value);
+
+    updatePreview();
+}
+
+/* ------------------------------
+   MOVEMENT EDITOR
+------------------------------ */
+function renderMovement() {
+    const container = document.getElementById("movementContainer");
+    container.innerHTML = "";
+
+    if (!currentKey) return;
+
+    const lvl = allLevels[currentKey];
+
+    lvl.movement = lvl.movement || [];
+
+    lvl.movement.forEach((m, index) => {
+        const box = document.createElement("div");
+        box.className = "panel";
+        box.style.marginTop = "8px";
+
+        const title = document.createElement("h4");
+        title.textContent = m.type.toUpperCase();
+        box.appendChild(title);
+
+        const del = document.createElement("button");
+        del.textContent = "Delete Movement";
+        del.className = "danger";
+        del.onclick = () => {
+            lvl.movement.splice(index, 1);
+            renderMovement();
+            updatePreview();
+        };
+        box.appendChild(del);
+
+        /* JITTER */
+        if (m.type === "jitter") {
+            const row = document.createElement("div");
+            row.className = "row";
+
+            const f1 = document.createElement("div");
+            f1.className = "field";
+            f1.innerHTML = `<label>Intensity</label>
+                <input type="number" step="0.1" value="${m.intensity}"
+                onchange="updateJitter(${index}, 'intensity', this.value)">`;
+
+            const f2 = document.createElement("div");
+            f2.className = "field";
+            f2.innerHTML = `<label>Speed</label>
+                <input type="number" step="0.001" value="${m.speed}"
+                onchange="updateJitter(${index}, 'speed', this.value)">`;
+
+            row.appendChild(f1);
+            row.appendChild(f2);
+            box.appendChild(row);
+        }
+
+        /* LINEAR */
+        if (m.type === "linear") {
+            const addPathBtn = document.createElement("button");
+            addPathBtn.textContent = "+ Add Path";
+            addPathBtn.onclick = () => {
+                m.paths.push({
+                    p1: { x: 200, y: 200 },
+                    p2: { x: 800, y: 600 },
+                    time: 3
+                });
+                renderMovement();
+                updatePreview();
+            };
+            box.appendChild(addPathBtn);
+
+            m.paths.forEach((p, pIndex) => {
+                const pBox = document.createElement("div");
+                pBox.className = "panel";
+                pBox.style.marginTop = "6px";
+
+                pBox.innerHTML = `
+                    <h5>Path ${pIndex + 1}</h5>
+                    <div class="row">
+                        <div class="field">
+                            <label>p1.x</label>
+                            <input type="number" value="${p.p1.x}"
+                            onchange="updateLinear(${index}, ${pIndex}, 'p1x', this.value)">
+                        </div>
+                        <div class="field">
+                            <label>p1.y</label>
+                            <input type="number" value="${p.p1.y}"
+                            onchange="updateLinear(${index}, ${pIndex}, 'p1y', this.value)">
+                        </div>
+                        <div class="field">
+                            <label>p2.x</label>
+                            <input type="number" value="${p.p2.x}"
+                            onchange="updateLinear(${index}, ${pIndex}, 'p2x', this.value)">
+                        </div>
+                        <div class="field">
+                            <label>p2.y</label>
+                            <input type="number" value="${p.p2.y}"
+                            onchange="updateLinear(${index}, ${pIndex}, 'p2y', this.value)">
+                        </div>
+                        <div class="field">
+                            <label>time</label>
+                            <input type="number" step="0.1" value="${p.time}"
+                            onchange="updateLinear(${index}, ${pIndex}, 'time', this.value)">
+                        </div>
+                    </div>
+                `;
+
+                const delPath = document.createElement("button");
+                delPath.textContent = "Delete Path";
+                delPath.className = "danger";
+                delPath.onclick = () => {
+                    m.paths.splice(pIndex, 1);
+                    renderMovement();
+                    updatePreview();
+                };
+
+                pBox.appendChild(delPath);
+                box.appendChild(pBox);
+            });
+        }
+
+        container.appendChild(box);
+    });
+}
+
+function updateJitter(i, key, value) {
+    allLevels[currentKey].movement[i][key] = Number(value);
+    updatePreview();
+}
+
+function updateLinear(i, pIndex, key, value) {
+    const p = allLevels[currentKey].movement[i].paths[pIndex];
+    if (key === "p1x") p.p1.x = Number(value);
+    if (key === "p1y") p.p1.y = Number(value);
+    if (key === "p2x") p.p2.x = Number(value);
+    if (key === "p2y") p.p2.y = Number(value);
+    if (key === "time") p.time = Number(value);
+    updatePreview();
+}
+
+/* ------------------------------
+   ADD MOVEMENT
+------------------------------ */
+document.getElementById("addJitterBtn").onclick = () => {
+    if (!currentKey) return;
+    allLevels[currentKey].movement.push({
+        type: "jitter",
+        intensity: 2,
+        speed: 0.015
+    });
+    renderMovement();
+    updatePreview();
+};
+
+document.getElementById("addLinearBtn").onclick = () => {
+    if (!currentKey) return;
+    allLevels[currentKey].movement.push({
+        type: "linear",
+        paths: [
+            { p1: { x: 200, y: 200 }, p2: { x: 800, y: 600 }, time: 3 }
+        ]
+    });
+    renderMovement();
+    updatePreview();
+};
+
+/* ------------------------------
+   ADD LEVEL
+------------------------------ */
+document.getElementById("addLevelBtn").onclick = () => {
+    let key = prompt("Enter new level key (e.g. level4):");
+    if (!key) return;
+
+    if (allLevels[key]) {
+        alert("Level already exists!");
+        return;
+    }
+
+    allLevels[key] = {
+        name: key,
+        goal: 5,
+        next: null,
+        scoreDelta: 1,
+        cooldown: 3,
+        missPenalty: 1,
+        expiredPenalty: 0.5,
+        cursorSize: 100,
+        targetSize: 100,
+        cursorHitboxSize: 20,
+        targetHitboxSize: 36,
+        movement: [],
+        assets: {
+            cursor: "white.png",
+            targets: ["red.png"]
+        },
+        allowMultiple: null
+    };
+
+    if (!startLevelKey) {
+        startLevelKey = key;
+    }
+
+    selectLevel(key);
+    refreshLevelList();
+};
+
+document.getElementById("deleteLevelBtn").onclick = () => {
+    if (!currentKey) return;
+
+    const keyToDelete = currentKey;
+    delete allLevels[keyToDelete];
+
+    const remainingKeys = Object.keys(allLevels);
+    if (startLevelKey === keyToDelete) {
+        startLevelKey = remainingKeys[0] || null;
+    }
+    currentKey = null;
+
+    if (remainingKeys.length > 0) {
+        selectLevel(remainingKeys[0]);
+    } else {
+        updatePreview();
+        refreshLevelList();
+    }
+};
+
+/* ------------------------------
+   IMPORT LEVELS.JSON
+------------------------------ */
+document.getElementById("importBtn").onclick = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+
+    input.onchange = e => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+
+        reader.onload = ev => {
+            const parsed = JSON.parse(ev.target.result);
+
+            if (parsed && parsed.levels && typeof parsed.levels === "object") {
+                allLevels = parsed.levels;
+                startLevelKey = parsed.startLevel || Object.keys(allLevels)[0] || null;
+            } else {
+                allLevels = parsed;
+                startLevelKey = Object.keys(allLevels)[0] || null;
+            }
+
+            const firstKey = Object.keys(allLevels)[0];
+            if (firstKey) {
+                selectLevel(firstKey);
+            } else {
+                currentKey = null;
+                updatePreview();
+                refreshLevelList();
+            }
+        };
+
+        reader.readAsText(file);
+    };
+
+    input.click();
+};
+
+/* ------------------------------
+   EXPORT LEVELS.JSON
+------------------------------ */
+document.getElementById("exportBtn").onclick = () => {
+    saveCurrentLevel();
+
+    const blob = new Blob(
+        [JSON.stringify({
+            startLevel: startLevelKey || Object.keys(allLevels)[0] || null,
+            levels: allLevels
+        }, null, 4)],
+        { type: "application/json" }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "levels.json";
+    a.click();
+};
+
+/* ------------------------------
+   LIVE UPDATE ON INPUT
+------------------------------ */
+document.querySelectorAll("#editorPanel input").forEach(inp => {
+    inp.addEventListener("input", saveCurrentLevel);
+});
+
+document.getElementById("allowMultipleEnabledInput").addEventListener("change", () => {
+    setAllowMultipleEnabled(document.getElementById("allowMultipleEnabledInput").checked);
+    saveCurrentLevel();
+});
+
+/* ------------------------------
+   INIT EMPTY STATE
+------------------------------ */
+setAllowMultipleEnabled(false);
+document.getElementById("preview").textContent =
+    "// Import levels.json to begin";
+
+</script>
+</body>
+</html>
