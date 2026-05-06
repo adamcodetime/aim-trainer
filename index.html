@@ -26,6 +26,12 @@ let inMenu = true;
 let activeTargets = [];
 let spawnTimer = null;
 
+const MAX_ASSET_SIZE = 100;
+const CURSOR_HITBOX_SIZE = 20;
+const TARGET_HITBOX_SIZE = 300;
+const MISS_CLICK_PENALTY = 1;
+const EXPIRED_TARGET_PENALTY = 0.5;
+
 // -------------------------
 // LEVEL DATA (Internal)
 // -------------------------
@@ -100,6 +106,30 @@ function preload() {
     this.load.image("redRect", "assets/red.png");
 }
 
+function fitImageToMaxSize(image, maxSize = MAX_ASSET_SIZE) {
+    const frame = image.frame;
+    const scale = Math.min(maxSize / frame.width, maxSize / frame.height);
+    image.setScale(scale);
+    return image;
+}
+
+function getCenteredHitbox(sprite, size) {
+    return new Phaser.Geom.Rectangle(
+        sprite.x - size / 2,
+        sprite.y - size / 2,
+        size,
+        size
+    );
+}
+
+function formatScore(value) {
+    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function updateScoreDisplay() {
+    scoreText.setText("Score: " + formatScore(score));
+}
+
 function create() {
     const w = this.scale.width;
     const h = this.scale.height;
@@ -117,8 +147,9 @@ function create() {
         fontSize: "32px", color: "#ffffff"
     }).setDepth(9999).setVisible(false);
 
-    rect = this.add.image(w / 2, h / 2, "whiteRect");
-    rect.setScale(0.5).setDepth(9999).setVisible(false); // Scaled for the placeholder asset
+    rect = fitImageToMaxSize(this.add.image(w / 2, h / 2, "whiteRect"))
+        .setDepth(9999)
+        .setVisible(false);
 
     // MENU SCREEN
     this.menuContainer = this.add.container(w / 2, h / 2);
@@ -152,18 +183,26 @@ function create() {
             return;
         }
 
-        const cursorBounds = rect.getBounds();
+        const cursorBounds = getCenteredHitbox(rect, CURSOR_HITBOX_SIZE);
+        let hitTarget = false;
         for (let i = activeTargets.length - 1; i >= 0; i--) {
             const t = activeTargets[i];
-            if (Phaser.Geom.Intersects.RectangleToRectangle(cursorBounds, t.getBounds())) {
+            const targetBounds = getCenteredHitbox(t, TARGET_HITBOX_SIZE);
+            if (Phaser.Geom.Intersects.RectangleToRectangle(cursorBounds, targetBounds)) {
+                hitTarget = true;
                 t.destroy();
                 activeTargets.splice(i, 1);
                 score += currentLevel.scoreDelta || 1;
-                scoreText.setText("Score: " + score);
+                updateScoreDisplay();
                 if (!currentLevel.allowMultiple && !gameOver) spawnTarget(this);
                 checkLevelProgress(this);
                 break;
             }
+        }
+
+        if (!hitTarget) {
+            score -= MISS_CLICK_PENALTY;
+            updateScoreDisplay();
         }
     });
 }
@@ -216,7 +255,7 @@ function spawnTarget(scene) {
     const x = Phaser.Math.Between(margin, scene.scale.width - margin);
     const y = Phaser.Math.Between(margin, scene.scale.height - margin);
 
-    const t = scene.add.image(x, y, "redRect").setScale(0.5);
+    const t = fitImageToMaxSize(scene.add.image(x, y, "redRect"));
     t.movementModules = [];
 
     if (currentLevel.movement) {
@@ -229,6 +268,8 @@ function spawnTarget(scene) {
         if (!gameOver && t.active) {
             t.destroy();
             Phaser.Utils.Array.Remove(activeTargets, t);
+            score -= EXPIRED_TARGET_PENALTY;
+            updateScoreDisplay();
             if (!currentLevel.allowMultiple && !gameOver) spawnTarget(scene);
         }
     });
@@ -240,7 +281,7 @@ function checkLevelProgress(scene) {
             currentLevelKey = currentLevel.next;
             currentLevel = levels[currentLevelKey];
             score = 0;
-            scoreText.setText("Score: 0");
+            updateScoreDisplay();
             levelTextBG.setText(formatLevelText());
             goalText.setText("🏁 Goal: " + currentLevel.goal);
             setupSpawning(scene);
